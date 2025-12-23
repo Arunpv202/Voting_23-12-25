@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#0B0E11] text-white;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-[#181A20] border border-[#2B2F36] backdrop-blur-md bg-opacity-80;
+  }
+  .glass-input {
+    @apply bg-[#0B0E11] border border-[#2B2F36] text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 transition-all;
+  }
+}

@@ -1,0 +1,317 @@
+PROJECT DOCUMENTATION (LOGIC ONLY)
+
+================================================================================
+BACKEND FILE STRUCTURE
+================================================================================
+backend/
+└── src/
+    ├── provider.js
+    ├── server.js
+    └── routes/
+        ├── address.js
+        ├── blocks.js
+        ├── network.js
+        └── tx.js
+
+================================================================================
+BACKEND CODE
+================================================================================
+
+--------------------------------------------------------------------------------
+File: backend/src/provider.js
+--------------------------------------------------------------------------------
+const { ethers } = require("ethers");
+
+const provider = new ethers.JsonRpcProvider(
+  "http://localhost:8545"
+);
+
+module.exports = provider;
+
+--------------------------------------------------------------------------------
+File: backend/src/routes/address.js
+--------------------------------------------------------------------------------
+const express = require("express");
+const { ethers } = require("ethers");
+const provider = require("../provider");
+
+const router = express.Router();
+
+router.get("/:addr", async (req, res) => {
+  const balance = await provider.getBalance(req.params.addr);
+
+  res.json({
+    address: req.params.addr,
+    balance: ethers.formatEther(balance)
+  });
+});
+
+module.exports = router;
+
+--------------------------------------------------------------------------------
+File: backend/src/routes/blocks.js
+--------------------------------------------------------------------------------
+const express = require("express");
+const provider = require("../provider");
+
+const router = express.Router();
+
+router.get("/", async (req, res) => {
+  const latest = await provider.getBlockNumber();
+  const blocks = [];
+
+  for (let i = latest; i > latest - 10 && i >= 0; i--) {
+    const block = await provider.getBlock(i);
+    blocks.push({
+      number: block.number,
+      hash: block.hash,
+      miner: block.miner,
+      txCount: block.transactions.length,
+      timestamp: block.timestamp
+    });
+  }
+
+  res.json(blocks);
+});
+
+router.get("/:number", async (req, res) => {
+  const block = await provider.getBlock(
+    Number(req.params.number),
+    true
+  );
+  res.json(block);
+});
+
+module.exports = router;
+
+--------------------------------------------------------------------------------
+File: backend/src/routes/network.js
+--------------------------------------------------------------------------------
+const express = require("express");
+const provider = require("../provider");
+
+const router = express.Router();
+
+router.get("/", async (req, res) => {
+  const network = await provider.getNetwork();
+  const blockNumber = await provider.getBlockNumber();
+
+  res.json({
+    chainId: Number(network.chainId),
+    blockNumber,
+    name: "Local Clique PoA"
+  });
+});
+
+module.exports = router;
+
+--------------------------------------------------------------------------------
+File: backend/src/routes/tx.js
+--------------------------------------------------------------------------------
+const express = require("express");
+const provider = require("../provider");
+
+const router = express.Router();
+
+router.get("/:hash", async (req, res) => {
+  const tx = await provider.getTransaction(req.params.hash);
+  const receipt = await provider.getTransactionReceipt(req.params.hash);
+  res.json({ tx, receipt });
+});
+
+module.exports = router;
+
+--------------------------------------------------------------------------------
+File: backend/src/server.js
+--------------------------------------------------------------------------------
+const express = require("express");
+const cors = require("cors");
+
+const blocks = require("./routes/blocks");
+const tx = require("./routes/tx");
+const address = require("./routes/address");
+const network = require("./routes/network");
+
+const app = express();
+app.use(cors());
+
+app.use("/network", network);
+app.use("/blocks", blocks);
+app.use("/tx", tx);
+app.use("/address", address);
+
+app.listen(4000, () => {
+  console.log("Explorer backend running on http://localhost:4000");
+});
+
+
+================================================================================
+FRONTEND FILE STRUCTURE
+================================================================================
+explorer-frontend/
+└── src/
+    ├── api.js
+    ├── App.jsx
+    ├── main.jsx
+    ├── components/
+    │   ├── Navbar.jsx
+    │   ├── SearchBar.jsx
+    │   └── StatCard.jsx
+    └── pages/
+        └── Dashboard.jsx
+
+================================================================================
+FRONTEND CODE
+================================================================================
+
+--------------------------------------------------------------------------------
+File: explorer-frontend/src/api.js
+--------------------------------------------------------------------------------
+import axios from "axios";
+
+export const api = axios.create({
+  baseURL: "http://localhost:4000"
+});
+
+--------------------------------------------------------------------------------
+File: explorer-frontend/src/App.jsx
+--------------------------------------------------------------------------------
+import Dashboard from "./pages/Dashboard";
+
+export default function App() {
+  return <Dashboard />;
+}
+
+--------------------------------------------------------------------------------
+File: explorer-frontend/src/main.jsx
+--------------------------------------------------------------------------------
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+
+--------------------------------------------------------------------------------
+File: explorer-frontend/src/pages/Dashboard.jsx
+--------------------------------------------------------------------------------
+import { useEffect, useState } from "react";
+import {api} from "../api.js";
+import Navbar from "../components/Navbar";
+import SearchBar from "../components/SearchBar";
+import StatCard from "../components/StatCard";
+
+export default function Dashboard() {
+  const [net, setNet] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await api.get("/network");
+        setNet(res.data);
+      } catch (err) {
+        setError("Backend not reachable");
+      }
+    };
+
+    load();
+    const i = setInterval(load, 5000);
+    return () => clearInterval(i);
+  }, []);
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-400">
+        {error}
+      </div>
+    );
+  }
+
+  if (!net) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        Loading Explorer...
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <Navbar />
+
+      <div className="max-w-7xl mx-auto px-6 py-10">
+        <h2 className="text-4xl font-bold">
+          Ethereum Block Explorer
+        </h2>
+        <p className="text-gray-400 mt-2">
+          Tracking your private Clique PoA chain
+        </p>
+
+        <SearchBar />
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-10">
+          <StatCard title="Chain ID" value={net.chainId} />
+          <StatCard title="Latest Block" value={net.blockNumber} />
+          <StatCard title="Network" value={net.name} />
+          <StatCard title="Consensus" value="Clique PoA" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+--------------------------------------------------------------------------------
+File: explorer-frontend/src/components/Navbar.jsx
+--------------------------------------------------------------------------------
+export default function Navbar() {
+  return (
+    <div className="border-b border-border bg-bg">
+      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <h1 className="text-xl font-semibold">
+          Local Block Explorer
+        </h1>
+        <span className="text-sm text-gray-400">
+          Private Geth Network
+        </span>
+      </div>
+    </div>
+  );
+}
+
+--------------------------------------------------------------------------------
+File: explorer-frontend/src/components/SearchBar.jsx
+--------------------------------------------------------------------------------
+export default function SearchBar() {
+  return (
+    <div className="mt-8">
+      <input
+        placeholder="Search by Block Number / Tx Hash / Address"
+        className="
+          w-full p-4 rounded-xl
+          bg-card border border-border
+          text-white placeholder-gray-500
+          focus:outline-none focus:ring-2 focus:ring-indigo-500
+        "
+      />
+    </div>
+  );
+}
+
+--------------------------------------------------------------------------------
+File: explorer-frontend/src/components/StatCard.jsx
+--------------------------------------------------------------------------------
+export default function StatCard({ title, value }) {
+  return (
+    <div className="bg-card border border-border rounded-2xl p-6">
+      <p className="text-gray-400 text-sm">{title}</p>
+      <p className="text-2xl font-semibold mt-2">
+        {value}
+      </p>
+    </div>
+  );
+}
